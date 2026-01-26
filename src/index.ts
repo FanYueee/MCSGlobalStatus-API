@@ -1,4 +1,5 @@
 import Fastify from 'fastify';
+import cors from '@fastify/cors';
 import websocket from '@fastify/websocket';
 import { statusRoutes } from './routes/status.js';
 import { distributedRoutes } from './routes/distributed.js';
@@ -12,6 +13,11 @@ const HOST = process.env.HOST || '0.0.0.0';
 async function main() {
   const fastify = Fastify({
     logger: true,
+  });
+
+  // Register CORS
+  await fastify.register(cors, {
+    origin: true
   });
 
   // Register WebSocket plugin
