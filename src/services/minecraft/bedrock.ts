@@ -9,10 +9,46 @@ const OFFLINE_MESSAGE_ID = Buffer.from([
   0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78,
 ]);
 
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 500;
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 export async function pingBedrockServer(
   host: string,
   port: number,
   timeout: number = 5000
+): Promise<ServerStatus> {
+  let lastResult: ServerStatus | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await delay(RETRY_DELAY);
+    }
+
+    const result = await pingBedrockServerOnce(host, port, timeout);
+
+    if (result.online) {
+      return result;
+    }
+
+    lastResult = result;
+
+    // Only retry on timeout or network errors
+    if (result.error !== 'timeout' && !result.error?.includes('ECONNRESET')) {
+      return result;
+    }
+  }
+
+  return lastResult!;
+}
+
+async function pingBedrockServerOnce(
+  host: string,
+  port: number,
+  timeout: number
 ): Promise<ServerStatus> {
   return new Promise((resolve) => {
     const socket = dgram.createSocket('udp4');

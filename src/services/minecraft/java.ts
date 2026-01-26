@@ -3,12 +3,54 @@ import { ServerStatus, VersionInfo, PlayersInfo } from '../../types/index.js';
 import { parseMotd } from './motd.js';
 
 const PROTOCOL_VERSION = 767; // 1.21.1
+const MAX_RETRIES = 2;
+const RETRY_DELAY = 500;
+const RETRYABLE_ERRORS = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH'];
+
+function delay(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
 
 export async function pingJavaServer(
   host: string,
   port: number,
   timeout: number = 5000,
   connectHost?: string // Optional: IP to connect to (for SRV/proxy scenarios)
+): Promise<ServerStatus> {
+  let lastResult: ServerStatus | null = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await delay(RETRY_DELAY);
+    }
+
+    const result = await pingJavaServerOnce(host, port, timeout, connectHost);
+
+    if (result.online) {
+      return result;
+    }
+
+    lastResult = result;
+
+    // Check if error is retryable
+    const errorCode = (result.error || '').split(':')[0].trim();
+    const isRetryable = RETRYABLE_ERRORS.some(e =>
+      result.error?.includes(e) || errorCode === e
+    );
+
+    if (!isRetryable) {
+      return result;
+    }
+  }
+
+  return lastResult!;
+}
+
+async function pingJavaServerOnce(
+  host: string,
+  port: number,
+  timeout: number,
+  connectHost?: string
 ): Promise<ServerStatus> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
