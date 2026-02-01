@@ -9,7 +9,7 @@ const OFFLINE_MESSAGE_ID = Buffer.from([
   0xfd, 0xfd, 0xfd, 0xfd, 0x12, 0x34, 0x56, 0x78,
 ]);
 
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 0; // No retry for UDP - if no response, retry won't help
 const RETRY_DELAY = 500;
 
 function delay(ms: number): Promise<void> {
@@ -19,7 +19,7 @@ function delay(ms: number): Promise<void> {
 export async function pingBedrockServer(
   host: string,
   port: number,
-  timeout: number = 5000
+  timeout: number = 3000
 ): Promise<ServerStatus> {
   let lastResult: ServerStatus | null = null;
 
@@ -79,8 +79,12 @@ async function pingBedrockServerOnce(
       resolve(result);
     });
 
-    const pingPacket = createUnconnectedPing();
-    socket.send(pingPacket, port, host);
+    // Use connect() to create a "connected" UDP socket
+    // This allows us to receive ICMP port unreachable errors
+    socket.connect(port, host, () => {
+      const pingPacket = createUnconnectedPing();
+      socket.send(pingPacket);
+    });
   });
 }
 

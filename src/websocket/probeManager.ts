@@ -61,7 +61,7 @@ class ProbeManager {
     target: string,
     port: number,
     protocol: 'java' | 'bedrock',
-    timeout: number = 10000
+    timeout: number = 6000
   ): Promise<PingResult> {
     const probe = this.probes.get(probeId);
     if (!probe) {

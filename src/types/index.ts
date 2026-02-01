@@ -8,13 +8,27 @@ export interface ServerStatus {
   motd?: MotdInfo;
   favicon?: string;
   error?: string;
+  type?: 'java' | 'bedrock';
+}
+
+export interface CombinedStatus {
+  java: ServerStatus;
+  bedrock: ServerStatus;
 }
 
 export interface IpInfo {
   ip: string;
+  ips?: string[];  // All resolved IPs
   srv_record?: SrvRecord;
-  asn?: AsnInfo;
+  asn?: AsnInfo | AsnInfo[];  // Single or multiple ASNs
   location?: LocationInfo;
+  dns_records?: DnsRecord[];
+}
+
+export interface DnsRecord {
+  hostname: string;
+  type: 'SRV' | 'A' | 'AAAA' | 'CNAME';
+  data: string;
 }
 
 export interface SrvRecord {

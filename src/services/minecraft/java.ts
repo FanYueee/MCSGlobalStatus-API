@@ -3,9 +3,9 @@ import { ServerStatus, VersionInfo, PlayersInfo } from '../../types/index.js';
 import { parseMotd } from './motd.js';
 
 const PROTOCOL_VERSION = 767; // 1.21.1
-const MAX_RETRIES = 2;
+const MAX_RETRIES = 1;
 const RETRY_DELAY = 500;
-const RETRYABLE_ERRORS = ['ECONNRESET', 'ECONNREFUSED', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH'];
+const RETRYABLE_ERRORS = ['ECONNRESET', 'ETIMEDOUT', 'EHOSTUNREACH', 'ENETUNREACH'];
 
 function delay(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -209,18 +209,18 @@ function parseStatusResponse(
 ): ServerStatus {
   const version: VersionInfo | undefined = data.version
     ? {
-        name: data.version.name || 'Unknown',
-        name_clean: cleanVersionName(data.version.name || 'Unknown'),
-        protocol: data.version.protocol || 0,
-      }
+      name: data.version.name || 'Unknown',
+      name_clean: cleanVersionName(data.version.name || 'Unknown'),
+      protocol: data.version.protocol || 0,
+    }
     : undefined;
 
   const players: PlayersInfo | undefined = data.players
     ? {
-        online: data.players.online || 0,
-        max: data.players.max || 0,
-        sample: data.players.sample,
-      }
+      online: data.players.online || 0,
+      max: data.players.max || 0,
+      sample: data.players.sample,
+    }
     : undefined;
 
   const motd = data.description ? parseMotd(data.description as string) : undefined;
