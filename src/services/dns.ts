@@ -1,6 +1,6 @@
 import dns from 'dns';
 import { promisify } from 'util';
-import { SrvRecord, DnsRecord } from '../types/index.js';
+import { SrvRecord, DnsRecord, DnsSnapshot } from '../types/index.js';
 
 const resolveSrv = promisify(dns.resolveSrv);
 const resolve4 = promisify(dns.resolve4);
@@ -114,86 +114,97 @@ export function isIPv4(ip: string): boolean {
 }
 
 export async function collectDnsRecords(host: string, srvRecord?: SrvRecord | null): Promise<DnsRecord[]> {
-  const records: DnsRecord[] = [];
-  const resolved = new Set<string>(); // Prevent infinite loops
+  const snapshot = await resolveDnsSnapshot(host, srvRecord);
+  return snapshot.dns_records;
+}
 
-  // Skip if already an IP address
+export async function resolveDnsSnapshot(host: string, srvRecord?: SrvRecord | null): Promise<DnsSnapshot> {
+  // Skip DNS lookups if already an IP address
   if (IPV4_REGEX.test(host) || IPV6_REGEX.test(host)) {
-    return records;
+    return {
+      ip: host,
+      ips: [host],
+      dns_records: [],
+    };
   }
 
-  // Add SRV record if provided
+  const records: DnsRecord[] = [];
+  const resolved = new Set<string>();
+  const targetHost = srvRecord?.target || host;
+
   if (srvRecord) {
     records.push({
       hostname: `_minecraft._tcp.${host}`,
       type: 'SRV',
       data: `1 1 ${srvRecord.port} ${srvRecord.target}`,
     });
-
-    // Recursively resolve the SRV target
-    await resolveHostRecords(srvRecord.target, records, resolved);
   }
 
-  // Recursively resolve the original host
-  await resolveHostRecords(host, records, resolved);
+  const resolution = await resolveHostSnapshot(targetHost, records, resolved);
 
-  return records;
+  return {
+    ip: resolution.ip,
+    ips: resolution.ips,
+    dns_records: records,
+  };
 }
 
-async function resolveHostRecords(host: string, records: DnsRecord[], resolved: Set<string>): Promise<void> {
+async function resolveHostSnapshot(
+  host: string,
+  records: DnsRecord[],
+  resolved: Set<string>
+): Promise<{ ip: string | null; ips: string[] }> {
   // Skip if already resolved or is an IP address
-  if (resolved.has(host) || IPV4_REGEX.test(host) || IPV6_REGEX.test(host)) {
-    return;
+  if (resolved.has(host)) {
+    return { ip: null, ips: [] };
+  }
+
+  if (IPV4_REGEX.test(host) || IPV6_REGEX.test(host)) {
+    return { ip: host, ips: [host] };
   }
   resolved.add(host);
 
   // Try CNAME record first
-  try {
-    const cnames = await withTimeout(resolveCname(host), DNS_TIMEOUT, []);
-    if (cnames && cnames.length > 0) {
-      const cnameTarget = cnames[0];
+  const cnames = await withTimeout(resolveCname(host), DNS_TIMEOUT, []);
+  if (cnames && cnames.length > 0) {
+    const cnameTarget = cnames[0];
+    records.push({
+      hostname: host,
+      type: 'CNAME',
+      data: cnameTarget,
+    });
+    return resolveHostSnapshot(cnameTarget, records, resolved);
+  }
+
+  const [aRecords, aaaaRecords] = await Promise.all([
+    withTimeout(resolve4(host), DNS_TIMEOUT, []),
+    withTimeout(resolve6(host), DNS_TIMEOUT, []),
+  ]);
+
+  if (aRecords && aRecords.length > 0) {
+    for (const ip of aRecords) {
       records.push({
         hostname: host,
-        type: 'CNAME',
-        data: cnameTarget,
+        type: 'A',
+        data: ip,
       });
-      // Recursively resolve the CNAME target
-      await resolveHostRecords(cnameTarget, records, resolved);
-      return; // CNAME exists, don't look for A/AAAA on this hostname
     }
-  } catch {
-    // CNAME not found, continue to A/AAAA
   }
 
-  // Try A record - add ALL records
-  try {
-    const aRecords = await withTimeout(resolve4(host), DNS_TIMEOUT, []);
-    if (aRecords && aRecords.length > 0) {
-      for (const ip of aRecords) {
-        records.push({
-          hostname: host,
-          type: 'A',
-          data: ip,
-        });
-      }
+  if (aaaaRecords && aaaaRecords.length > 0) {
+    for (const ip of aaaaRecords) {
+      records.push({
+        hostname: host,
+        type: 'AAAA',
+        data: ip,
+      });
     }
-  } catch {
-    // A record not found
   }
 
-  // Try AAAA record - add ALL records
-  try {
-    const aaaaRecords = await withTimeout(resolve6(host), DNS_TIMEOUT, []);
-    if (aaaaRecords && aaaaRecords.length > 0) {
-      for (const ip of aaaaRecords) {
-        records.push({
-          hostname: host,
-          type: 'AAAA',
-          data: ip,
-        });
-      }
-    }
-  } catch {
-    // AAAA record not found
-  }
+  const ips = [...(aRecords || []), ...(aaaaRecords || [])];
+
+  return {
+    ip: (aRecords && aRecords[0]) || (aaaaRecords && aaaaRecords[0]) || null,
+    ips,
+  };
 }

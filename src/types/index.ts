@@ -17,7 +17,7 @@ export interface CombinedStatus {
 }
 
 export interface IpInfo {
-  ip: string;
+  ip?: string;
   ips?: string[];  // All resolved IPs
   srv_record?: SrvRecord;
   asn?: AsnInfo | AsnInfo[];  // Single or multiple ASNs
@@ -29,6 +29,12 @@ export interface DnsRecord {
   hostname: string;
   type: 'SRV' | 'A' | 'AAAA' | 'CNAME';
   data: string;
+}
+
+export interface DnsSnapshot {
+  ip: string | null;
+  ips: string[];
+  dns_records: DnsRecord[];
 }
 
 export interface SrvRecord {
