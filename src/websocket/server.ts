@@ -36,12 +36,8 @@ function loadProbeSecrets(): void {
 
 // Watch for config file changes (hot reload)
 function watchProbeSecrets(): void {
-  if (!existsSync(PROBES_CONFIG_PATH)) {
-    return;
-  }
-
   watchFile(PROBES_CONFIG_PATH, { interval: 1000 }, (curr, prev) => {
-    if (curr.mtime !== prev.mtime) {
+    if (curr.mtimeMs !== prev.mtimeMs || curr.nlink !== prev.nlink) {
       console.log('probes.json changed, reloading...');
       loadProbeSecrets();
     }
