@@ -44,6 +44,9 @@ async function main() {
     return {
       status: 'ok',
       probes: probeManager.getProbeCount(),
+      pending_tasks: probeManager.getPendingTaskCount(),
+      server_time: new Date().toISOString(),
+      probe_nodes: probeManager.getProbeHealthSummaries(),
     };
   });
 

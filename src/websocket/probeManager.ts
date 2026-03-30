@@ -1,5 +1,5 @@
 import { WebSocket } from 'ws';
-import { ProbeNode, PingTask, PingResult } from '../types/index.js';
+import { ProbeNode, PingTask, PingResult, ProbeHealthSummary } from '../types/index.js';
 import { randomUUID } from 'crypto';
 
 class ProbeManager {
@@ -33,6 +33,15 @@ class ProbeManager {
         error,
       });
     }
+  }
+
+  private markProbeActivity(probeId: string): void {
+    const probe = this.probes.get(probeId);
+    if (!probe) {
+      return;
+    }
+
+    probe.lastPing = Date.now();
   }
 
   register(id: string, region: string, socket: WebSocket): void {
@@ -82,8 +91,37 @@ class ProbeManager {
     return this.probes.size;
   }
 
+  getPendingTaskCount(): number {
+    return this.pendingTasks.size;
+  }
+
+  getProbeHealthSummaries(): ProbeHealthSummary[] {
+    const now = Date.now();
+
+    return this.getAllProbes().map((probe) => {
+      const socket = probe.socket as unknown as WebSocket;
+      let pendingTasks = 0;
+
+      for (const pending of this.pendingTasks.values()) {
+        if (pending.probeId === probe.id) {
+          pendingTasks++;
+        }
+      }
+
+      return {
+        id: probe.id,
+        region: probe.region,
+        connected: socket.readyState === WebSocket.OPEN,
+        last_seen_at: new Date(probe.lastPing).toISOString(),
+        last_seen_ago_ms: Math.max(0, now - probe.lastPing),
+        pending_tasks: pendingTasks,
+      };
+    });
+  }
+
   handleMessage(probeId: string, message: string): void {
     try {
+      this.markProbeActivity(probeId);
       const result = JSON.parse(message) as PingResult;
       this.resolvePendingTask(result.id, result);
     } catch (err) {

@@ -85,6 +85,15 @@ export interface ProbeNode {
   lastPing: number;
 }
 
+export interface ProbeHealthSummary {
+  id: string;
+  region: string;
+  connected: boolean;
+  last_seen_at: string;
+  last_seen_ago_ms: number;
+  pending_tasks: number;
+}
+
 export interface PingTask {
   id: string;
   type: 'ping';
