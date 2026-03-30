@@ -11,21 +11,34 @@ class ProbeManager {
 
   register(id: string, region: string, socket: WebSocket): void {
     const existing = this.probes.get(id);
-    if (existing) {
-      existing.socket.close();
-    }
+    const normalizedSocket = socket as unknown as globalThis.WebSocket;
 
     this.probes.set(id, {
       id,
       region,
-      socket: socket as unknown as globalThis.WebSocket,
+      socket: normalizedSocket,
       lastPing: Date.now(),
     });
+
+    // Close the replaced socket after swapping the map entry so the old
+    // connection's close event cannot unregister the fresh connection.
+    if (existing && existing.socket !== normalizedSocket) {
+      (existing.socket as unknown as WebSocket).close();
+    }
 
     console.log(`Probe registered: ${id} (${region})`);
   }
 
-  unregister(id: string): void {
+  unregister(id: string, socket?: WebSocket): void {
+    const existing = this.probes.get(id);
+    if (!existing) {
+      return;
+    }
+
+    if (socket && (existing.socket as unknown as WebSocket) !== socket) {
+      return;
+    }
+
     this.probes.delete(id);
     console.log(`Probe unregistered: ${id}`);
   }

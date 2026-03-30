@@ -94,12 +94,12 @@ export async function setupWebSocket(fastify: FastifyInstance): Promise<void> {
     });
 
     socket.on('close', () => {
-      probeManager.unregister(id);
+      probeManager.unregister(id, socket);
     });
 
     socket.on('error', (err) => {
       console.error(`WebSocket error for probe ${id}:`, err);
-      probeManager.unregister(id);
+      probeManager.unregister(id, socket);
     });
   });
 }
