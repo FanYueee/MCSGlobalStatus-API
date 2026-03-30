@@ -5,9 +5,35 @@ import { randomUUID } from 'crypto';
 class ProbeManager {
   private probes: Map<string, ProbeNode> = new Map();
   private pendingTasks: Map<string, {
+    probeId: string;
     resolve: (result: PingResult) => void;
     timeout: NodeJS.Timeout;
   }> = new Map();
+
+  private resolvePendingTask(taskId: string, result: PingResult): void {
+    const pending = this.pendingTasks.get(taskId);
+    if (!pending) {
+      return;
+    }
+
+    clearTimeout(pending.timeout);
+    this.pendingTasks.delete(taskId);
+    pending.resolve(result);
+  }
+
+  private failPendingTasksForProbe(probeId: string, error: string): void {
+    for (const [taskId, pending] of this.pendingTasks.entries()) {
+      if (pending.probeId !== probeId) {
+        continue;
+      }
+
+      this.resolvePendingTask(taskId, {
+        id: taskId,
+        success: false,
+        error,
+      });
+    }
+  }
 
   register(id: string, region: string, socket: WebSocket): void {
     const existing = this.probes.get(id);
@@ -40,6 +66,7 @@ class ProbeManager {
     }
 
     this.probes.delete(id);
+    this.failPendingTasksForProbe(id, `Probe ${id} disconnected`);
     console.log(`Probe unregistered: ${id}`);
   }
 
@@ -58,12 +85,7 @@ class ProbeManager {
   handleMessage(probeId: string, message: string): void {
     try {
       const result = JSON.parse(message) as PingResult;
-      const pending = this.pendingTasks.get(result.id);
-      if (pending) {
-        clearTimeout(pending.timeout);
-        pending.resolve(result);
-        this.pendingTasks.delete(result.id);
-      }
+      this.resolvePendingTask(result.id, result);
     } catch (err) {
       console.error(`Invalid message from probe ${probeId}:`, err);
     }
@@ -85,6 +107,15 @@ class ProbeManager {
       };
     }
 
+    const socket = probe.socket as unknown as WebSocket;
+    if (socket.readyState !== WebSocket.OPEN) {
+      return {
+        id: '',
+        success: false,
+        error: `Probe ${probeId} is not connected`,
+      };
+    }
+
     const taskId = randomUUID();
     const task: PingTask = {
       id: taskId,
@@ -96,8 +127,7 @@ class ProbeManager {
 
     return new Promise((resolve) => {
       const timeoutHandle = setTimeout(() => {
-        this.pendingTasks.delete(taskId);
-        resolve({
+        this.resolvePendingTask(taskId, {
           id: taskId,
           success: false,
           error: 'Task timeout',
@@ -105,11 +135,30 @@ class ProbeManager {
       }, timeout);
 
       this.pendingTasks.set(taskId, {
+        probeId,
         resolve,
         timeout: timeoutHandle,
       });
 
-      (probe.socket as unknown as WebSocket).send(JSON.stringify(task));
+      try {
+        socket.send(JSON.stringify(task), (err) => {
+          if (err) {
+            this.resolvePendingTask(taskId, {
+              id: taskId,
+              success: false,
+              error: `Failed to send task to probe ${probeId}: ${err.message}`,
+            });
+          }
+        });
+      } catch (err) {
+        this.resolvePendingTask(taskId, {
+          id: taskId,
+          success: false,
+          error: err instanceof Error
+            ? `Failed to send task to probe ${probeId}: ${err.message}`
+            : `Failed to send task to probe ${probeId}`,
+        });
+      }
     });
   }
 
