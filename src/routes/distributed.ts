@@ -3,6 +3,7 @@ import { probeManager } from '../websocket/probeManager.js';
 import { parseAddress } from '../services/dns.js';
 import { lookupLocation, lookupAsn } from '../services/geoip.js';
 import { DistributedResult, NodeResult, IpInfo, AsnInfo } from '../types/index.js';
+import { createRateLimitHook } from '../security/rateLimit.js';
 
 interface DistributedParams {
   server: string;
@@ -15,6 +16,9 @@ interface DistributedQuery {
 export async function distributedRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{ Params: DistributedParams; Querystring: DistributedQuery }>(
     '/v1/distributed/:server',
+    {
+      onRequest: createRateLimitHook('distributed'),
+    },
     async (
       request: FastifyRequest<{ Params: DistributedParams; Querystring: DistributedQuery }>,
       reply: FastifyReply

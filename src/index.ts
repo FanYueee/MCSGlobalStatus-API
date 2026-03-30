@@ -10,16 +10,25 @@ import { probeManager } from './websocket/probeManager.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
+const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
+const CORS_ORIGINS = parseOrigins(process.env.CORS_ORIGINS);
 
 async function main() {
   const fastify = Fastify({
     logger: true,
+    trustProxy: TRUST_PROXY,
   });
 
   // Register CORS
   await fastify.register(cors, {
-    origin: true
+    origin: CORS_ORIGINS.length > 0 ? CORS_ORIGINS : false
   });
+
+  if (CORS_ORIGINS.length > 0) {
+    fastify.log.info({ cors_origins: CORS_ORIGINS }, 'CORS allowlist enabled');
+  } else {
+    fastify.log.warn('CORS allowlist is empty; cross-origin browser access is disabled');
+  }
 
   // Register WebSocket plugin
   await fastify.register(websocket);
@@ -75,3 +84,14 @@ async function main() {
 }
 
 main();
+
+function parseOrigins(rawValue: string | undefined): string[] {
+  if (!rawValue) {
+    return [];
+  }
+
+  return rawValue
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter((origin) => origin.length > 0);
+}

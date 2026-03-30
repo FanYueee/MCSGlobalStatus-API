@@ -3,6 +3,7 @@ import { probeManager } from './probeManager.js';
 import { readFileSync, watchFile, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { createRateLimitHook } from '../security/rateLimit.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PROBES_CONFIG_PATH = join(__dirname, '../../probes.json');
@@ -65,7 +66,10 @@ function validateProbeAuth(probeId: string, authHeader: string | undefined): boo
 }
 
 export async function setupWebSocket(fastify: FastifyInstance): Promise<void> {
-  fastify.get('/v1/stream', { websocket: true }, (socket, req) => {
+  fastify.get('/v1/stream', {
+    websocket: true,
+    onRequest: createRateLimitHook('websocket'),
+  }, (socket, req) => {
     const url = new URL(req.url, `http://${req.headers.host}`);
     const id = url.searchParams.get('id');
     const region = url.searchParams.get('region');

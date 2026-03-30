@@ -4,6 +4,7 @@ import { pingBedrockServer } from '../services/minecraft/bedrock.js';
 import { resolveSrvRecord, parseAddress, resolveDnsSnapshot } from '../services/dns.js';
 import { lookupLocation, lookupAsn } from '../services/geoip.js';
 import { ServerStatus, IpInfo, AsnInfo } from '../types/index.js';
+import { createRateLimitHook } from '../security/rateLimit.js';
 
 interface StatusParams {
   server: string;
@@ -16,6 +17,9 @@ interface StatusQuery {
 export async function statusRoutes(fastify: FastifyInstance): Promise<void> {
   fastify.get<{ Params: StatusParams; Querystring: StatusQuery }>(
     '/v1/status/:server',
+    {
+      onRequest: createRateLimitHook('status'),
+    },
     async (request: FastifyRequest<{ Params: StatusParams; Querystring: StatusQuery }>, reply: FastifyReply) => {
       const { server } = request.params;
       const { type } = request.query;
