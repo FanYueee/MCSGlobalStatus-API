@@ -91,8 +91,11 @@ export interface ProbeTaskStats {
   tasks_succeeded: number;
   tasks_failed: number;
   tasks_timed_out: number;
+  recent_latencies_ms: number[];
   last_latency_ms?: number;
   avg_latency_ms?: number;
+  success_rate: number;
+  timeout_ratio: number;
   last_error?: string;
   last_error_at?: string;
   disconnects: number;
@@ -121,6 +124,9 @@ export interface ProbeObservabilitySummary {
   total_tasks_failed: number;
   total_tasks_timed_out: number;
   total_probe_disconnects: number;
+  success_rate: number;
+  timeout_ratio: number;
+  error_counts: Record<string, number>;
   recent_errors: RecentProbeError[];
 }
 

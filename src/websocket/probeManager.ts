@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 
 class ProbeManager {
   private static readonly RECENT_ERROR_LIMIT = 20;
+  private static readonly RECENT_LATENCY_LIMIT = 10;
 
   private probes: Map<string, ProbeNode> = new Map();
   private probeStats: Map<string, ProbeTaskStats> = new Map();
@@ -27,6 +28,7 @@ class ProbeManager {
   private totalTasksTimedOut = 0;
   private totalProbeDisconnects = 0;
   private recentErrors: RecentProbeError[] = [];
+  private errorCounts: Map<string, number> = new Map();
 
   private createDefaultStats(): ProbeTaskStats {
     return {
@@ -34,6 +36,9 @@ class ProbeManager {
       tasks_succeeded: 0,
       tasks_failed: 0,
       tasks_timed_out: 0,
+      recent_latencies_ms: [],
+      success_rate: 0,
+      timeout_ratio: 0,
       disconnects: 0,
     };
   }
@@ -63,16 +68,20 @@ class ProbeManager {
 
   private recordTaskOutcome(probeId: string, result: PingResult, latencyMs: number): void {
     const stats = this.getOrCreateProbeStats(probeId);
-    const isTimeout = result.error === 'Task timeout';
+    const errorType = classifyProbeError(result.error);
+    const isTimeout = errorType === 'timeout';
 
     if (result.success) {
       this.totalTasksSucceeded += 1;
       stats.tasks_succeeded += 1;
       stats.last_latency_ms = latencyMs;
+      stats.recent_latencies_ms.push(latencyMs);
+      stats.recent_latencies_ms = stats.recent_latencies_ms.slice(-ProbeManager.RECENT_LATENCY_LIMIT);
       const previousSamples = stats.tasks_succeeded - 1;
       stats.avg_latency_ms = previousSamples === 0
           ? latencyMs
           : Math.round((((stats.avg_latency_ms ?? latencyMs) * previousSamples) + latencyMs) / stats.tasks_succeeded);
+      this.refreshDerivedProbeStats(stats);
       return;
     }
 
@@ -88,6 +97,8 @@ class ProbeManager {
       this.totalTasksTimedOut += 1;
     }
 
+    this.bumpErrorCount(errorType);
+    this.refreshDerivedProbeStats(stats);
     this.pushRecentError(probeId, result.error || 'Unknown probe task error');
   }
 
@@ -100,6 +111,15 @@ class ProbeManager {
       error,
     });
     this.recentErrors = this.recentErrors.slice(0, ProbeManager.RECENT_ERROR_LIMIT);
+  }
+
+  private bumpErrorCount(errorType: string): void {
+    this.errorCounts.set(errorType, (this.errorCounts.get(errorType) || 0) + 1);
+  }
+
+  private refreshDerivedProbeStats(stats: ProbeTaskStats): void {
+    stats.success_rate = computeRatio(stats.tasks_succeeded, stats.tasks_sent);
+    stats.timeout_ratio = computeRatio(stats.tasks_timed_out, stats.tasks_sent);
   }
 
   private failPendingTasksForProbe(probeId: string, error: string): void {
@@ -162,6 +182,8 @@ class ProbeManager {
     stats.disconnects += 1;
     stats.last_error = `Probe ${id} disconnected`;
     stats.last_error_at = new Date().toISOString();
+    this.bumpErrorCount('disconnected');
+    this.refreshDerivedProbeStats(stats);
     this.pushRecentError(id, `Probe ${id} disconnected`);
     this.failPendingTasksForProbe(id, `Probe ${id} disconnected`);
     this.probes.delete(id);
@@ -191,6 +213,9 @@ class ProbeManager {
       total_tasks_failed: this.totalTasksFailed,
       total_tasks_timed_out: this.totalTasksTimedOut,
       total_probe_disconnects: this.totalProbeDisconnects,
+      success_rate: computeRatio(this.totalTasksSucceeded, this.totalTasksSent),
+      timeout_ratio: computeRatio(this.totalTasksTimedOut, this.totalTasksSent),
+      error_counts: Object.fromEntries(this.errorCounts.entries()),
       recent_errors: this.recentErrors,
     };
   }
@@ -215,7 +240,10 @@ class ProbeManager {
         last_seen_at: new Date(probe.lastPing).toISOString(),
         last_seen_ago_ms: Math.max(0, now - probe.lastPing),
         pending_tasks: pendingTasks,
-        stats: { ...probe.stats },
+        stats: {
+          ...probe.stats,
+          recent_latencies_ms: [...probe.stats.recent_latencies_ms],
+        },
       };
     });
   }
@@ -276,6 +304,7 @@ class ProbeManager {
       const stats = this.getOrCreateProbeStats(probeId);
       this.totalTasksSent += 1;
       stats.tasks_sent += 1;
+      this.refreshDerivedProbeStats(stats);
       this.pendingTasks.set(taskId, {
         probeId,
         startedAt: Date.now(),
@@ -325,6 +354,51 @@ class ProbeManager {
     await Promise.all(promises);
     return results;
   }
+}
+
+function computeRatio(part: number, total: number): number {
+  if (total <= 0) {
+    return 0;
+  }
+
+  return Number((part / total).toFixed(4));
+}
+
+function classifyProbeError(error: string | undefined): string {
+  if (!error) {
+    return 'unknown';
+  }
+
+  const normalized = error.toLowerCase();
+  if (normalized.includes('timeout')) {
+    return 'timeout';
+  }
+
+  if (normalized.includes('disconnected')) {
+    return 'disconnected';
+  }
+
+  if (normalized.includes('failed to send task')) {
+    return 'send_failed';
+  }
+
+  if (normalized.includes('dns resolution failed')) {
+    return 'dns_resolution_failed';
+  }
+
+  if (normalized.includes('invalid hostname')) {
+    return 'invalid_hostname';
+  }
+
+  if (normalized.includes('not connected')) {
+    return 'probe_not_connected';
+  }
+
+  if (normalized.includes('not found')) {
+    return 'probe_not_found';
+  }
+
+  return 'other';
 }
 
 export const probeManager = new ProbeManager();
