@@ -1,14 +1,53 @@
 import { WebSocket } from 'ws';
-import { ProbeNode, PingTask, PingResult, ProbeHealthSummary } from '../types/index.js';
+import {
+  ProbeNode,
+  PingTask,
+  PingResult,
+  ProbeHealthSummary,
+  ProbeTaskStats,
+  ProbeObservabilitySummary,
+  RecentProbeError,
+} from '../types/index.js';
 import { randomUUID } from 'crypto';
 
 class ProbeManager {
+  private static readonly RECENT_ERROR_LIMIT = 20;
+
   private probes: Map<string, ProbeNode> = new Map();
+  private probeStats: Map<string, ProbeTaskStats> = new Map();
   private pendingTasks: Map<string, {
     probeId: string;
+    startedAt: number;
     resolve: (result: PingResult) => void;
     timeout: NodeJS.Timeout;
   }> = new Map();
+  private totalTasksSent = 0;
+  private totalTasksSucceeded = 0;
+  private totalTasksFailed = 0;
+  private totalTasksTimedOut = 0;
+  private totalProbeDisconnects = 0;
+  private recentErrors: RecentProbeError[] = [];
+
+  private createDefaultStats(): ProbeTaskStats {
+    return {
+      tasks_sent: 0,
+      tasks_succeeded: 0,
+      tasks_failed: 0,
+      tasks_timed_out: 0,
+      disconnects: 0,
+    };
+  }
+
+  private getOrCreateProbeStats(probeId: string): ProbeTaskStats {
+    const existing = this.probeStats.get(probeId);
+    if (existing) {
+      return existing;
+    }
+
+    const created = this.createDefaultStats();
+    this.probeStats.set(probeId, created);
+    return created;
+  }
 
   private resolvePendingTask(taskId: string, result: PingResult): void {
     const pending = this.pendingTasks.get(taskId);
@@ -18,7 +57,49 @@ class ProbeManager {
 
     clearTimeout(pending.timeout);
     this.pendingTasks.delete(taskId);
+    this.recordTaskOutcome(pending.probeId, result, Date.now() - pending.startedAt);
     pending.resolve(result);
+  }
+
+  private recordTaskOutcome(probeId: string, result: PingResult, latencyMs: number): void {
+    const stats = this.getOrCreateProbeStats(probeId);
+    const isTimeout = result.error === 'Task timeout';
+
+    if (result.success) {
+      this.totalTasksSucceeded += 1;
+      stats.tasks_succeeded += 1;
+      stats.last_latency_ms = latencyMs;
+      const previousSamples = stats.tasks_succeeded - 1;
+      stats.avg_latency_ms = previousSamples === 0
+          ? latencyMs
+          : Math.round((((stats.avg_latency_ms ?? latencyMs) * previousSamples) + latencyMs) / stats.tasks_succeeded);
+      return;
+    }
+
+    this.totalTasksFailed += 1;
+    stats.tasks_failed += 1;
+    stats.last_error = result.error;
+    stats.last_error_at = new Date().toISOString();
+    if (isTimeout) {
+      stats.tasks_timed_out += 1;
+    }
+
+    if (isTimeout) {
+      this.totalTasksTimedOut += 1;
+    }
+
+    this.pushRecentError(probeId, result.error || 'Unknown probe task error');
+  }
+
+  private pushRecentError(probeId: string, error: string): void {
+    const probe = this.probes.get(probeId);
+    this.recentErrors.unshift({
+      timestamp: new Date().toISOString(),
+      probe_id: probeId,
+      region: probe?.region,
+      error,
+    });
+    this.recentErrors = this.recentErrors.slice(0, ProbeManager.RECENT_ERROR_LIMIT);
   }
 
   private failPendingTasksForProbe(probeId: string, error: string): void {
@@ -47,12 +128,14 @@ class ProbeManager {
   register(id: string, region: string, socket: WebSocket): void {
     const existing = this.probes.get(id);
     const normalizedSocket = socket as unknown as globalThis.WebSocket;
+    const stats = this.getOrCreateProbeStats(id);
 
     this.probes.set(id, {
       id,
       region,
       socket: normalizedSocket,
       lastPing: Date.now(),
+      stats,
     });
 
     // Close the replaced socket after swapping the map entry so the old
@@ -74,8 +157,14 @@ class ProbeManager {
       return;
     }
 
-    this.probes.delete(id);
+    const stats = this.getOrCreateProbeStats(id);
+    this.totalProbeDisconnects += 1;
+    stats.disconnects += 1;
+    stats.last_error = `Probe ${id} disconnected`;
+    stats.last_error_at = new Date().toISOString();
+    this.pushRecentError(id, `Probe ${id} disconnected`);
     this.failPendingTasksForProbe(id, `Probe ${id} disconnected`);
+    this.probes.delete(id);
     console.log(`Probe unregistered: ${id}`);
   }
 
@@ -93,6 +182,17 @@ class ProbeManager {
 
   getPendingTaskCount(): number {
     return this.pendingTasks.size;
+  }
+
+  getObservabilitySummary(): ProbeObservabilitySummary {
+    return {
+      total_tasks_sent: this.totalTasksSent,
+      total_tasks_succeeded: this.totalTasksSucceeded,
+      total_tasks_failed: this.totalTasksFailed,
+      total_tasks_timed_out: this.totalTasksTimedOut,
+      total_probe_disconnects: this.totalProbeDisconnects,
+      recent_errors: this.recentErrors,
+    };
   }
 
   getProbeHealthSummaries(): ProbeHealthSummary[] {
@@ -115,6 +215,7 @@ class ProbeManager {
         last_seen_at: new Date(probe.lastPing).toISOString(),
         last_seen_ago_ms: Math.max(0, now - probe.lastPing),
         pending_tasks: pendingTasks,
+        stats: { ...probe.stats },
       };
     });
   }
@@ -172,8 +273,12 @@ class ProbeManager {
         });
       }, timeout);
 
+      const stats = this.getOrCreateProbeStats(probeId);
+      this.totalTasksSent += 1;
+      stats.tasks_sent += 1;
       this.pendingTasks.set(taskId, {
         probeId,
+        startedAt: Date.now(),
         resolve,
         timeout: timeoutHandle,
       });

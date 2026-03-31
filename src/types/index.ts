@@ -83,6 +83,19 @@ export interface ProbeNode {
   region: string;
   socket: WebSocket;
   lastPing: number;
+  stats: ProbeTaskStats;
+}
+
+export interface ProbeTaskStats {
+  tasks_sent: number;
+  tasks_succeeded: number;
+  tasks_failed: number;
+  tasks_timed_out: number;
+  last_latency_ms?: number;
+  avg_latency_ms?: number;
+  last_error?: string;
+  last_error_at?: string;
+  disconnects: number;
 }
 
 export interface ProbeHealthSummary {
@@ -92,6 +105,23 @@ export interface ProbeHealthSummary {
   last_seen_at: string;
   last_seen_ago_ms: number;
   pending_tasks: number;
+  stats: ProbeTaskStats;
+}
+
+export interface RecentProbeError {
+  timestamp: string;
+  probe_id: string;
+  region?: string;
+  error: string;
+}
+
+export interface ProbeObservabilitySummary {
+  total_tasks_sent: number;
+  total_tasks_succeeded: number;
+  total_tasks_failed: number;
+  total_tasks_timed_out: number;
+  total_probe_disconnects: number;
+  recent_errors: RecentProbeError[];
 }
 
 export interface PingTask {

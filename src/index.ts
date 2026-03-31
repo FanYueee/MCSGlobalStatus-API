@@ -79,6 +79,7 @@ async function main() {
       status: 'ok',
       probes: probeManager.getProbeCount(),
       pending_tasks: probeManager.getPendingTaskCount(),
+      observability: probeManager.getObservabilitySummary(),
       server_time: new Date().toISOString(),
       probe_nodes: probeManager.getProbeHealthSummaries(),
     };
@@ -93,7 +94,11 @@ async function main() {
         status: '/v1/status/{server}',
         distributed: '/v1/distributed/{server}',
         stream: '/v1/stream (WebSocket)',
-        health: '/health',
+        health: {
+          public: '/health',
+          details: '/health/details',
+          details_access: 'whitelisted IPs only',
+        },
       },
     };
   });
