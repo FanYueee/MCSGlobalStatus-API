@@ -54,6 +54,7 @@ async function pingJavaServerOnce(
 ): Promise<ServerStatus> {
   return new Promise((resolve) => {
     const socket = new net.Socket();
+    const startTime = Date.now();
     let buffer = Buffer.alloc(0);
     let resolved = false;
 
@@ -82,7 +83,7 @@ async function pingJavaServerOnce(
         const result = parseResponse(buffer, host, port);
         if (result) {
           cleanup();
-          resolve(result);
+          resolve(result.online ? { ...result, latency: Date.now() - startTime } : result);
         }
       } catch {
         // Need more data

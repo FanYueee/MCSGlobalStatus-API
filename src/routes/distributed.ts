@@ -4,6 +4,7 @@ import { parseAddress, resolveDnsSnapshot, resolveSrvRecord } from '../services/
 import { lookupLocation, lookupAsn } from '../services/geoip.js';
 import { DistributedResult, NodeResult, IpInfo, AsnInfo, SrvRecord } from '../types/index.js';
 import { createRateLimitHook } from '../security/rateLimit.js';
+import { normalizeServerStatus } from '../services/statusNormalization.js';
 
 interface DistributedParams {
   server: string;
@@ -103,7 +104,7 @@ export async function distributedRoutes(fastify: FastifyInstance): Promise<void>
 
         nodes[probeId] = {
           node_region: probe?.region || 'Unknown',
-          status,
+          status: normalizeServerStatus(status),
         };
       }
 

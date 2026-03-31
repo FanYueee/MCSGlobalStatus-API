@@ -5,6 +5,7 @@ import { resolveSrvRecord, parseAddress, resolveDnsSnapshot } from '../services/
 import { lookupLocation, lookupAsn } from '../services/geoip.js';
 import { ServerStatus, IpInfo, AsnInfo } from '../types/index.js';
 import { createRateLimitHook } from '../security/rateLimit.js';
+import { normalizeServerStatus } from '../services/statusNormalization.js';
 
 interface StatusParams {
   server: string;
@@ -152,5 +153,5 @@ export async function getServerStatus(
     status.port = actualPort;
   }
 
-  return status;
+  return normalizeServerStatus(status);
 }

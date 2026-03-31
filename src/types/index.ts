@@ -7,6 +7,7 @@ export interface ServerStatus {
   players?: PlayersInfo;
   motd?: MotdInfo;
   favicon?: string;
+  latency?: number;
   error?: string;
   type?: 'java' | 'bedrock';
 }

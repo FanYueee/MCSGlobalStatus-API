@@ -52,6 +52,7 @@ async function pingBedrockServerOnce(
 ): Promise<ServerStatus> {
   return new Promise((resolve) => {
     const socket = dgram.createSocket('udp4');
+    const startTime = Date.now();
     let resolved = false;
 
     const cleanup = () => {
@@ -76,7 +77,7 @@ async function pingBedrockServerOnce(
       clearTimeout(timer);
       const result = parseUnconnectedPong(msg, host, port);
       cleanup();
-      resolve(result);
+      resolve(result.online ? { ...result, latency: Date.now() - startTime } : result);
     });
 
     // Use connect() to create a "connected" UDP socket
