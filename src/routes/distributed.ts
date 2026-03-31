@@ -1,8 +1,8 @@
 import { FastifyInstance, FastifyRequest, FastifyReply } from 'fastify';
 import { probeManager } from '../websocket/probeManager.js';
-import { parseAddress } from '../services/dns.js';
+import { parseAddress, resolveDnsSnapshot, resolveSrvRecord } from '../services/dns.js';
 import { lookupLocation, lookupAsn } from '../services/geoip.js';
-import { DistributedResult, NodeResult, IpInfo, AsnInfo } from '../types/index.js';
+import { DistributedResult, NodeResult, IpInfo, AsnInfo, SrvRecord } from '../types/index.js';
 import { createRateLimitHook } from '../security/rateLimit.js';
 
 interface DistributedParams {
@@ -47,6 +47,13 @@ export async function distributedRoutes(fastify: FastifyInstance): Promise<void>
       // For Bedrock: use 19132 if default Java port was specified
       const targetPort = type === 'bedrock' && port === 25565 ? 19132 : port;
 
+      // Use the controller's DNS snapshot to keep displayed DNS chains
+      // consistent with the standard endpoint. Probe-resolved IPs still win.
+      const controllerSrvRecord: SrvRecord | null = type === 'java'
+        ? await resolveSrvRecord(host)
+        : null;
+      const controllerDnsSnapshot = await resolveDnsSnapshot(host, controllerSrvRecord);
+
       // Probes resolve DNS locally; controller only aggregates and enriches the returned IP info
       const results = await probeManager.broadcastTask(host, targetPort, type);
 
@@ -82,6 +89,10 @@ export async function distributedRoutes(fastify: FastifyInstance): Promise<void>
             ips: uniqueIps.length > 1 ? uniqueIps : undefined,
             asn: allAsns.length > 1 ? allAsns : (allAsns[0] || undefined),
             location: probeIpInfo.ip ? (lookupLocation(probeIpInfo.ip) || undefined) : undefined,
+            srv_record: probeIpInfo.srv_record || controllerSrvRecord || undefined,
+            dns_records: controllerDnsSnapshot.dns_records.length > 0
+              ? controllerDnsSnapshot.dns_records
+              : probeIpInfo.dns_records,
           };
 
           status.ip_info = enrichedIpInfo;
