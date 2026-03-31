@@ -7,11 +7,13 @@ import { distributedRoutes } from './routes/distributed.js';
 import { setupWebSocket } from './websocket/server.js';
 import { initGeoIP } from './services/geoip.js';
 import { probeManager } from './websocket/probeManager.js';
+import { parseIpAllowlist, isIpAllowed, formatIpForLog } from './security/ipAllowlist.js';
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 const TRUST_PROXY = process.env.TRUST_PROXY === 'true';
 const CORS_ORIGINS = parseOrigins(process.env.CORS_ORIGINS);
+const HEALTH_DETAILS_WHITELIST = parseIpAllowlist(process.env.HEALTH_DETAILS_WHITELIST);
 
 async function main() {
   const fastify = Fastify({
@@ -28,6 +30,12 @@ async function main() {
     fastify.log.info({ cors_origins: CORS_ORIGINS }, 'CORS allowlist enabled');
   } else {
     fastify.log.warn('CORS allowlist is empty; cross-origin browser access is disabled');
+  }
+
+  if (HEALTH_DETAILS_WHITELIST.length > 0) {
+    fastify.log.info({ health_details_whitelist: HEALTH_DETAILS_WHITELIST }, 'Health details IP allowlist enabled');
+  } else {
+    fastify.log.warn('Health details IP allowlist is empty; /health/details will reject every request');
   }
 
   // Register WebSocket plugin
@@ -50,6 +58,23 @@ async function main() {
 
   // Health check endpoint
   fastify.get('/health', async () => {
+    return {
+      status: 'ok',
+      server_time: new Date().toISOString(),
+    };
+  });
+
+  // Restricted health details endpoint
+  fastify.get('/health/details', async (request, reply) => {
+    const requestIp = formatIpForLog(request.ip);
+    if (!isIpAllowed(requestIp, HEALTH_DETAILS_WHITELIST)) {
+      fastify.log.warn({ ip: requestIp }, 'Blocked /health/details request from non-whitelisted IP');
+      reply.code(403);
+      return {
+        error: 'Forbidden',
+      };
+    }
+
     return {
       status: 'ok',
       probes: probeManager.getProbeCount(),
