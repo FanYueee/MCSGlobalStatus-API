@@ -58,6 +58,7 @@ npm run start
 | `TRUST_PROXY` | 如果前面有 Nginx / Caddy 就開 `true` | `false` |
 | `CORS_ORIGINS` | 前端允許來源，逗號分隔 | 空 |
 | `HEALTH_DETAILS_WHITELIST` | 哪些 IP / CIDR 可以看 `/health/details` | 空 |
+| `CACHE_BYPASS_TOKEN` | 管理員 bypass 5 分鐘查詢快取用的 token | 空 |
 | `RATE_LIMIT_WINDOW_MS` | rate limit 視窗 | `60000` |
 | `RATE_LIMIT_STATUS_MAX` | `/v1/status` 每 IP 次數 | `60` |
 | `RATE_LIMIT_DISTRIBUTED_MAX` | `/v1/distributed` 每 IP 次數 | `20` |
@@ -106,4 +107,6 @@ Probe 連線時會帶自己的 `id` 和 `Bearer secret`。
 - `/health/details` 會看 allowlist，不在白名單就會 `403`。
 - Probe 會定期送 heartbeat，所以 `last_seen_at` 會比單純看 task 結果更準。
 - `probe_nodes[].stale` 代表這個 Probe 雖然 WebSocket 還開著，但最近一段時間沒有 heartbeat 或其他訊息。
+- `/v1/status` 和 `/v1/distributed` 都有 5 分鐘 server-side cache。
+- 如果你是管理員，要強制重查可以加 `?fresh=1`，再帶 header `x-mcs-cache-bypass-token: <你的 token>`。
 - 如果你在 WSL 裡跑，前端要從 Windows 瀏覽器打進來，記得把前端網址加進 `CORS_ORIGINS`。

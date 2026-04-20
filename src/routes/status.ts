@@ -6,6 +6,13 @@ import { lookupLocation, lookupAsn } from '../services/geoip.js';
 import { ServerStatus, IpInfo, AsnInfo } from '../types/index.js';
 import { createRateLimitHook } from '../security/rateLimit.js';
 import { normalizeServerStatus } from '../services/statusNormalization.js';
+import {
+  buildStatusCacheKey,
+  evaluateCacheBypass,
+  queryCache,
+  QUERY_CACHE_BYPASS_HEADER,
+  QUERY_CACHE_STATUS_HEADER,
+} from '../services/queryCache.js';
 
 interface StatusParams {
   server: string;
@@ -13,6 +20,7 @@ interface StatusParams {
 
 interface StatusQuery {
   type?: 'java' | 'bedrock';
+  fresh?: string;
 }
 
 export async function statusRoutes(fastify: FastifyInstance): Promise<void> {
@@ -23,7 +31,9 @@ export async function statusRoutes(fastify: FastifyInstance): Promise<void> {
     },
     async (request: FastifyRequest<{ Params: StatusParams; Querystring: StatusQuery }>, reply: FastifyReply) => {
       const { server } = request.params;
-      const { type } = request.query;
+      const { type, fresh } = request.query;
+
+      reply.header('Cache-Control', 'no-store');
 
       // Require type parameter
       if (!type) {
@@ -31,9 +41,19 @@ export async function statusRoutes(fastify: FastifyInstance): Promise<void> {
         return { error: 'Missing required parameter: type (java or bedrock)' };
       }
 
+      const bypassDecision = evaluateCacheBypass(
+        fresh,
+        request.headers[QUERY_CACHE_BYPASS_HEADER]
+      );
+
       try {
-        const result = await getServerStatus(server, type);
-        return result;
+        const cached = await queryCache.getOrLoad(
+          buildStatusCacheKey(server, type),
+          () => getServerStatus(server, type),
+          { bypass: bypassDecision.bypass }
+        );
+        reply.header(QUERY_CACHE_STATUS_HEADER, cached.status);
+        return cached.value;
       } catch (err) {
         reply.status(500);
         return { error: 'Internal server error' };
