@@ -8,6 +8,13 @@ import { setupWebSocket } from './websocket/server.js';
 import { initGeoIP, getGeoIPStatus } from './services/geoip.js';
 import { probeManager } from './websocket/probeManager.js';
 import { parseIpAllowlist, isIpAllowed, formatIpForLog } from './security/ipAllowlist.js';
+import {
+  QUERY_CACHE_CREATED_AT_DISPLAY_HEADER,
+  QUERY_CACHE_CREATED_AT_HEADER,
+  QUERY_CACHE_EXPIRES_AT_DISPLAY_HEADER,
+  QUERY_CACHE_EXPIRES_AT_HEADER,
+  QUERY_CACHE_STATUS_HEADER,
+} from './services/queryCache.js';
 
 interface RuntimeConfig {
   port: number;
@@ -41,6 +48,13 @@ export async function createServer(options: CreateServerOptions = {}): Promise<F
 
   await fastify.register(cors, {
     origin: config.corsOrigins.length > 0 ? config.corsOrigins : false,
+    exposedHeaders: [
+      QUERY_CACHE_STATUS_HEADER,
+      QUERY_CACHE_CREATED_AT_HEADER,
+      QUERY_CACHE_CREATED_AT_DISPLAY_HEADER,
+      QUERY_CACHE_EXPIRES_AT_HEADER,
+      QUERY_CACHE_EXPIRES_AT_DISPLAY_HEADER,
+    ],
   });
 
   if (config.corsOrigins.length > 0) {

@@ -10,6 +10,10 @@ import {
   evaluateCacheBypass,
   queryCache,
   QUERY_CACHE_BYPASS_HEADER,
+  QUERY_CACHE_CREATED_AT_DISPLAY_HEADER,
+  QUERY_CACHE_CREATED_AT_HEADER,
+  QUERY_CACHE_EXPIRES_AT_DISPLAY_HEADER,
+  QUERY_CACHE_EXPIRES_AT_HEADER,
   QUERY_CACHE_STATUS_HEADER,
 } from '../services/queryCache.js';
 
@@ -61,6 +65,10 @@ export async function distributedRoutes(fastify: FastifyInstance): Promise<void>
           { bypass: bypassDecision.bypass }
         );
         reply.header(QUERY_CACHE_STATUS_HEADER, cached.status);
+        reply.header(QUERY_CACHE_CREATED_AT_HEADER, cached.cachedAt);
+        reply.header(QUERY_CACHE_CREATED_AT_DISPLAY_HEADER, cached.cachedAtDisplay);
+        reply.header(QUERY_CACHE_EXPIRES_AT_HEADER, cached.expiresAt);
+        reply.header(QUERY_CACHE_EXPIRES_AT_DISPLAY_HEADER, cached.expiresAtDisplay);
         return cached.value;
       } catch (err) {
         reply.status(500);

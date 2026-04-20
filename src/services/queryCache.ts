@@ -4,11 +4,22 @@ import type { ProbeNode } from '../types/index.js';
 export const QUERY_CACHE_TTL_MS = 5 * 60 * 1000;
 export const QUERY_CACHE_STATUS_HEADER = 'X-MCS-Cache-Status';
 export const QUERY_CACHE_BYPASS_HEADER = 'x-mcs-cache-bypass-token';
+export const QUERY_CACHE_CREATED_AT_HEADER = 'X-MCS-Cache-Created-At';
+export const QUERY_CACHE_CREATED_AT_DISPLAY_HEADER = 'X-MCS-Cache-Created-At-Display';
+export const QUERY_CACHE_EXPIRES_AT_HEADER = 'X-MCS-Cache-Expires-At';
+export const QUERY_CACHE_EXPIRES_AT_DISPLAY_HEADER = 'X-MCS-Cache-Expires-At-Display';
 
 export type QueryCacheStatus = 'HIT' | 'MISS' | 'BYPASS';
 
 interface CacheEntry {
   value: unknown;
+  createdAt: number;
+  expiresAt: number;
+}
+
+interface CacheSnapshot {
+  value: unknown;
+  createdAt: number;
   expiresAt: number;
 }
 
@@ -18,9 +29,18 @@ export interface CacheBypassDecision {
   authorized: boolean;
 }
 
+export interface QueryCacheResult<T> {
+  status: QueryCacheStatus;
+  value: T;
+  cachedAt: string;
+  cachedAtDisplay: string;
+  expiresAt: string;
+  expiresAtDisplay: string;
+}
+
 export class QueryCache {
   private entries: Map<string, CacheEntry> = new Map();
-  private pending: Map<string, Promise<unknown>> = new Map();
+  private pending: Map<string, Promise<CacheSnapshot>> = new Map();
   private versions: Map<string, number> = new Map();
 
   constructor(private readonly ttlMs: number = QUERY_CACHE_TTL_MS) {}
@@ -39,7 +59,7 @@ export class QueryCache {
     key: string,
     loader: () => Promise<T>,
     options: { bypass?: boolean } = {}
-  ): Promise<{ status: QueryCacheStatus; value: T }> {
+  ): Promise<QueryCacheResult<T>> {
     const bypass = options.bypass === true;
     const now = Date.now();
 
@@ -51,14 +71,17 @@ export class QueryCache {
         return {
           status: 'HIT',
           value: cloneCacheValue(cached.value as T),
+          ...buildCacheTimeMetadata(cached.createdAt, cached.expiresAt),
         };
       }
 
       const pending = this.pending.get(key);
       if (pending) {
+        const snapshot = await pending;
         return {
           status: 'HIT',
-          value: cloneCacheValue(await pending as T),
+          value: cloneCacheValue(snapshot.value as T),
+          ...buildCacheTimeMetadata(snapshot.createdAt, snapshot.expiresAt),
         };
       }
     }
@@ -68,24 +91,31 @@ export class QueryCache {
 
     const pendingLoad = (async () => {
       const loaded = await loader();
+      const cachedAt = Date.now();
       const cachedValue = cloneCacheValue(loaded);
+      const snapshot: CacheSnapshot = {
+        value: cachedValue,
+        createdAt: cachedAt,
+        expiresAt: cachedAt + this.ttlMs,
+      };
 
       if (this.versions.get(key) === version) {
         this.entries.set(key, {
-          value: cachedValue,
-          expiresAt: Date.now() + this.ttlMs,
+          ...snapshot,
         });
       }
 
-      return cloneCacheValue(cachedValue);
+      return snapshot;
     })();
 
     this.pending.set(key, pendingLoad);
 
     try {
+      const snapshot = await pendingLoad;
       return {
         status: bypass ? 'BYPASS' : 'MISS',
-        value: await pendingLoad,
+        value: cloneCacheValue(snapshot.value as T),
+        ...buildCacheTimeMetadata(snapshot.createdAt, snapshot.expiresAt),
       };
     } finally {
       if (this.pending.get(key) === pendingLoad) {
@@ -188,4 +218,30 @@ function isTruthyFlag(value: string | undefined): boolean {
 
 function cloneCacheValue<T>(value: T): T {
   return JSON.parse(JSON.stringify(value)) as T;
+}
+
+function buildCacheTimeMetadata(createdAt: number, expiresAt: number): Omit<QueryCacheResult<unknown>, 'status' | 'value'> {
+  return {
+    cachedAt: new Date(createdAt).toISOString(),
+    cachedAtDisplay: formatApiHostTimestamp(createdAt),
+    expiresAt: new Date(expiresAt).toISOString(),
+    expiresAtDisplay: formatApiHostTimestamp(expiresAt),
+  };
+}
+
+function formatApiHostTimestamp(timestamp: number): string {
+  const date = new Date(timestamp);
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const seconds = String(date.getSeconds()).padStart(2, '0');
+  const offsetMinutes = -date.getTimezoneOffset();
+  const sign = offsetMinutes >= 0 ? '+' : '-';
+  const absoluteOffsetMinutes = Math.abs(offsetMinutes);
+  const offsetHours = String(Math.floor(absoluteOffsetMinutes / 60)).padStart(2, '0');
+  const offsetRemainderMinutes = String(absoluteOffsetMinutes % 60).padStart(2, '0');
+
+  return `${year}-${month}-${day} ${hours}:${minutes}:${seconds} UTC${sign}${offsetHours}:${offsetRemainderMinutes}`;
 }

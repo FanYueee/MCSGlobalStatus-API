@@ -242,7 +242,9 @@ test('GET /v1/status uses cache and ignores invalid bypass tokens', async (t) =>
 
   assert.equal(first.statusCode, 200);
   assert.equal(first.headers['x-mcs-cache-status'], 'MISS');
+  assert.equal(typeof first.headers['x-mcs-cache-created-at-display'], 'string');
   assert.equal(second.headers['x-mcs-cache-status'], 'HIT');
+  assert.equal(second.headers['x-mcs-cache-created-at-display'], first.headers['x-mcs-cache-created-at-display']);
   assert.equal(ignoredBypass.statusCode, 200);
   assert.equal(ignoredBypass.headers['x-mcs-cache-status'], 'HIT');
   assert.equal(bypassed.statusCode, 200);
@@ -320,8 +322,10 @@ test('GET /v1/distributed uses cache for repeated probe queries and supports adm
 
   assert.equal(first.statusCode, 200);
   assert.equal(first.headers['x-mcs-cache-status'], 'MISS');
+  assert.equal(typeof first.headers['x-mcs-cache-created-at-display'], 'string');
   assert.equal(second.statusCode, 200);
   assert.equal(second.headers['x-mcs-cache-status'], 'HIT');
+  assert.equal(second.headers['x-mcs-cache-created-at-display'], first.headers['x-mcs-cache-created-at-display']);
   assert.equal(ignoredBypass.statusCode, 200);
   assert.equal(ignoredBypass.headers['x-mcs-cache-status'], 'HIT');
   assert.equal(bypassed.statusCode, 200);
