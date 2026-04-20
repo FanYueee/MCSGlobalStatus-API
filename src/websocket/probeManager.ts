@@ -3,6 +3,7 @@ import {
   ProbeNode,
   PingTask,
   PingResult,
+  ProbeHeartbeatMessage,
   ProbeHealthSummary,
   ProbeTaskStats,
   ProbeObservabilitySummary,
@@ -13,6 +14,7 @@ import { randomUUID } from 'crypto';
 class ProbeManager {
   private static readonly RECENT_ERROR_LIMIT = 20;
   private static readonly RECENT_LATENCY_LIMIT = 10;
+  private static readonly HEARTBEAT_STALE_MS = 45_000;
 
   private probes: Map<string, ProbeNode> = new Map();
   private probeStats: Map<string, ProbeTaskStats> = new Map();
@@ -237,6 +239,7 @@ class ProbeManager {
         id: probe.id,
         region: probe.region,
         connected: socket.readyState === WebSocket.OPEN,
+        stale: now - probe.lastPing > ProbeManager.HEARTBEAT_STALE_MS,
         last_seen_at: new Date(probe.lastPing).toISOString(),
         last_seen_ago_ms: Math.max(0, now - probe.lastPing),
         pending_tasks: pendingTasks,
@@ -251,7 +254,11 @@ class ProbeManager {
   handleMessage(probeId: string, message: string): void {
     try {
       this.markProbeActivity(probeId);
-      const result = JSON.parse(message) as PingResult;
+      const result = JSON.parse(message) as PingResult | ProbeHeartbeatMessage;
+      if (isHeartbeatMessage(result)) {
+        return;
+      }
+
       this.resolvePendingTask(result.id, result);
     } catch (err) {
       console.error(`Invalid message from probe ${probeId}:`, err);
@@ -362,6 +369,10 @@ function computeRatio(part: number, total: number): number {
   }
 
   return Number((part / total).toFixed(4));
+}
+
+function isHeartbeatMessage(message: PingResult | ProbeHeartbeatMessage): message is ProbeHeartbeatMessage {
+  return (message as ProbeHeartbeatMessage).type === 'heartbeat';
 }
 
 function classifyProbeError(error: string | undefined): string {

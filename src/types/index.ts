@@ -106,6 +106,7 @@ export interface ProbeHealthSummary {
   id: string;
   region: string;
   connected: boolean;
+  stale: boolean;
   last_seen_at: string;
   last_seen_ago_ms: number;
   pending_tasks: number;
@@ -144,6 +145,11 @@ export interface PingResult {
   success: boolean;
   data?: ServerStatus;
   error?: string;
+}
+
+export interface ProbeHeartbeatMessage {
+  type: 'heartbeat';
+  timestamp?: string;
 }
 
 export interface DistributedResult {
