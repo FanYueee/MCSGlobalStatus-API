@@ -28,6 +28,15 @@ export async function initGeoIP(): Promise<boolean> {
   }
 }
 
+export function getGeoIPStatus() {
+  return {
+    loaded: cityReader !== null || asnReader !== null,
+    city_loaded: cityReader !== null,
+    asn_loaded: asnReader !== null,
+    directory: GEOIP_DIR,
+  };
+}
+
 export function lookupLocation(ip: string): LocationInfo | null {
   if (!cityReader) return null;
 

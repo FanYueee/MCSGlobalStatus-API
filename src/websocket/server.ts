@@ -10,6 +10,7 @@ const PROBES_CONFIG_PATH = join(__dirname, '../../probes.json');
 
 // Store probe secrets in memory
 let probeSecrets: Map<string, string> = new Map();
+let probeSecretsInitialized = false;
 
 // Load secrets from config file
 function loadProbeSecrets(): void {
@@ -45,9 +46,17 @@ function watchProbeSecrets(): void {
   });
 }
 
-// Initialize on module load
-loadProbeSecrets();
-watchProbeSecrets();
+function ensureProbeSecretsInitialized(enableWatch: boolean): void {
+  if (probeSecretsInitialized) {
+    return;
+  }
+
+  loadProbeSecrets();
+  if (enableWatch) {
+    watchProbeSecrets();
+  }
+  probeSecretsInitialized = true;
+}
 
 function validateProbeAuth(probeId: string, authHeader: string | undefined): boolean {
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
@@ -65,7 +74,12 @@ function validateProbeAuth(probeId: string, authHeader: string | undefined): boo
   return token === expectedSecret;
 }
 
-export async function setupWebSocket(fastify: FastifyInstance): Promise<void> {
+export async function setupWebSocket(
+  fastify: FastifyInstance,
+  options: { watchSecrets?: boolean } = {}
+): Promise<void> {
+  ensureProbeSecretsInitialized(options.watchSecrets !== false);
+
   fastify.get('/v1/stream', {
     websocket: true,
     onRequest: createRateLimitHook('websocket'),
